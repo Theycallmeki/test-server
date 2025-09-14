@@ -7,11 +7,16 @@ const cors = require('cors');
 const sequelize = require('./db');
 
 const app = express();
-const PORT = 3005;
 
-// ✅ Enable CORS for React frontend (CRA default is http://localhost:3000)
+// ✅ Render assigns PORT automatically, fallback for local dev
+const PORT = process.env.PORT || 3005;
+
+// ✅ Allow CORS from local React + deployed Vercel frontend
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',              // Local dev
+    'https://test-client-woad-one.vercel.app' // Your deployed frontend
+  ],
   credentials: true
 }));
 
@@ -21,7 +26,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
 app.use(session({
-  secret: 'Nx7jK3Zp!eVr9Q2Lm0tCfYz^BwA6hGdu', // 🔐 Dev-only secret
+  secret: process.env.SESSION_SECRET || 'Nx7jK3Zp!eVr9Q2Lm0tCfYz^BwA6hGdu', // 🔐 Use env var on Render
   resave: false,
   saveUninitialized: false
 }));
@@ -36,10 +41,10 @@ app.use((req, res, next) => {
 app.use('/', require('./routes/pages'));
 app.use('/api', require('./routes/api'));
 
-// ✅ Start server
+// ✅ Start server after DB sync
 sequelize.sync().then(() => {
   console.log('✅ Database synced.');
   app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 });
