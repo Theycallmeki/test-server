@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3005;
 app.use(cors({
   origin: [
     'http://localhost:3000',              // Local dev
-    'https://test-client-woad-one.vercel.app' // Your deployed frontend
+    'https://test-client-psi-three.vercel.app/' // Your deployed frontend
   ],
   credentials: true
 }));
