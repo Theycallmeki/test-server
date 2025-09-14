@@ -1,5 +1,3 @@
-// index.js
-
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
@@ -14,9 +12,10 @@ const PORT = process.env.PORT || 3005;
 // ✅ Allow CORS from local React + deployed Vercel frontend
 app.use(cors({
   origin: [
-    'http://localhost:3000',              // Local dev
-    'https://test-client-psi-three.vercel.app/' // Your deployed frontend
+    'http://localhost:3000',                 // Local dev
+    'https://test-client-psi-three.vercel.app' // Deployed frontend
   ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
 
