@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Panel / Sales Summary</title>
+  <link rel="stylesheet" href="/admin.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .summary-container {
+      color: white;
+      font-size: 1.2em;
+      margin-bottom: 2rem;
+    }
+
+    .flex-chart-section {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .chart-box,
+    .table-box {
+      flex: 1;
+      min-width: 300px;
+    }
+
+    .table-box {
+      color: white;
+    }
+
+    #categoryTable {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    #categoryTable th,
+    #categoryTable td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+
+    #categoryTable th {
+      background-color: #444;
+      color: white;
+    }
+
+    #categoryTableWrapper {
+      display: none;
+      margin-top: 1rem;
+    }
+
+    #toggleTableBtn {
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="fixed-header">
+    <a href="/">Home.</a>
+    <a href="/item">Items</a>
+    <a href="/admin">Admin Panel</a>
+    <a href="/sales-history">Sales History</a>
+    <a href="/prediction">Prediction</a>
+  </header>
+
+  <div class="main-container">
+    <h1>Admin Panel - Sales Summary</h1>
+
+    <div class="summary-container">
+      <p><strong>Total Quantity Sold:</strong> <span id="totalQuantity">Loading...</span></p>
+      <p><strong>Total Revenue:</strong> $<span id="totalRevenue">Loading...</span></p>
+    </div>
+
+    <div class="flex-chart-section">
+      <!-- LEFT: CHART -->
+      <div class="chart-box">
+        <h2>Category Demand Chart</h2>
+        <div id="chartLoading">Loading chart...</div>
+        <canvas id="categoryChart" style="display: none"></canvas>
+        <div id="chartError" class="error" style="display: none"></div>
+      </div>
+
+      <!-- RIGHT: DROPDOWN TABLE -->
+      <div class="table-box">
+        <button id="toggleTableBtn">Toggle Category Table</button>
+        <div id="categoryTableWrapper">
+          <table id="categoryTable">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Quantity Sold</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monthly Sales Table -->
+    <div class="table-box" style="margin-top: 2rem;">
+      <h2>Monthly Sales Summary</h2>
+      <table id="monthlySalesTable" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background-color: #444; color: white;">
+            <th style="border: 1px solid #ccc; padding: 8px;">Month</th>
+            <th style="border: 1px solid #ccc; padding: 8px;">Total Quantity Sold</th>
+            <th style="border: 1px solid #ccc; padding: 8px;">Total Revenue ($)</th>
+          </tr>
+        </thead>
+        <tbody id="monthlySalesBody">
+          <tr><td colspan="3" style="padding: 8px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    async function fetchSalesHistory() {
+      const res = await fetch('/api/sales-history');
+      if (!res.ok) throw new Error('Failed to fetch sales history');
+      return await res.json();
+    }
+
+    function calculateTotals(sales) {
+      let totalQuantity = 0;
+      let totalRevenue = 0;
+      sales.forEach(sale => {
+        const quantity = sale.quantitySold || 0;
+        const price = sale.Item?.price ? parseFloat(sale.Item.price) : 0;
+        totalQuantity += quantity;
+        totalRevenue += quantity * price;
+      });
+      return { totalQuantity, totalRevenue: totalRevenue.toFixed(2) };
+    }
+
+    function getCategoryFrequencies(sales) {
+      const freqMap = {};
+      sales.forEach(sale => {
+        const category = sale.Item?.category || 'Uncategorized';
+        freqMap[category] = (freqMap[category] || 0) + sale.quantitySold;
+      });
+
+      const sorted = Object.entries(freqMap).sort((a, b) => b[1] - a[1]);
+
+      return {
+        categoryNames: sorted.map(e => e[0]),
+        frequencies: sorted.map(e => e[1]),
+        rawMap: freqMap,
+      };
+    }
+
+    function renderChart(categories, frequencies) {
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const loadingElement = document.getElementById('chartLoading');
+      const errorElement = document.getElementById('chartError');
+      const chartElement = document.getElementById('categoryChart');
+
+      const total = frequencies.reduce((a, b) => a + b, 0);
+      const percentages = frequencies.map(f => ((f / total) * 100).toFixed(2));
+
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: categories,
+          datasets: [{
+            data: frequencies,
+            backgroundColor: [
+              '#36a2eb', '#ff6384', '#ffcd56',
+              '#4bc0c0', '#9966ff', '#c9cbcf',
+              '#f67019', '#00a950'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const label = ctx.label || '';
+                  const value = ctx.raw || 0;
+                  const pct = percentages[ctx.dataIndex];
+                  return `${label}: ${value} (${pct}%)`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      loadingElement.style.display = 'none';
+      errorElement.style.display = 'none';
+      chartElement.style.display = 'block';
+    }
+
+    function populateTable(freqMap) {
+      const tbody = document.querySelector('#categoryTable tbody');
+      tbody.innerHTML = '';
+
+      Object.entries(freqMap).sort((a, b) => b[1] - a[1]).forEach(([cat, qty]) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${cat}</td><td>${qty}</td>`;
+        tbody.appendChild(row);
+      });
+    }
+
+    function renderMonthlySalesTable(sales) {
+      const monthMap = {};
+
+      sales.forEach(sale => {
+        const date = new Date(sale.date);
+        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const quantity = sale.quantitySold || 0;
+        const price = parseFloat(sale.Item?.price || 0);
+
+        if (!monthMap[month]) {
+          monthMap[month] = { quantity: 0, revenue: 0 };
+        }
+
+        monthMap[month].quantity += quantity;
+        monthMap[month].revenue += quantity * price;
+      });
+
+      const tbody = document.getElementById('monthlySalesBody');
+      tbody.innerHTML = '';
+
+      Object.entries(monthMap).sort().forEach(([month, data]) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td style="border: 1px solid #ccc; padding: 8px;">${month}</td>
+          <td style="border: 1px solid #ccc; padding: 8px;">${data.quantity}</td>
+          <td style="border: 1px solid #ccc; padding: 8px;">${data.revenue.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function showChartError(message) {
+      const loadingElement = document.getElementById('chartLoading');
+      const errorElement = document.getElementById('chartError');
+      loadingElement.style.display = 'none';
+      errorElement.textContent = message;
+      errorElement.style.display = 'block';
+    }
+
+    async function init() {
+      try {
+        const sales = await fetchSalesHistory();
+        const { totalQuantity, totalRevenue } = calculateTotals(sales);
+        document.getElementById('totalQuantity').textContent = totalQuantity;
+        document.getElementById('totalRevenue').textContent = totalRevenue;
+
+        const { categoryNames, frequencies, rawMap } = getCategoryFrequencies(sales);
+
+        if (categoryNames.length > 0) {
+          renderChart(categoryNames, frequencies);
+          populateTable(rawMap);
+          renderMonthlySalesTable(sales);
+        } else {
+          showChartError('No sales data available.');
+        }
+      } catch (err) {
+        document.getElementById('totalQuantity').textContent = 'Error';
+        document.getElementById('totalRevenue').textContent = 'Error';
+        showChartError('Failed to load data.');
+      }
+    }
+
+    document.getElementById('toggleTableBtn').addEventListener('click', () => {
+      const wrapper = document.getElementById('categoryTableWrapper');
+      wrapper.style.display = wrapper.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
